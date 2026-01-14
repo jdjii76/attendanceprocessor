@@ -207,8 +207,21 @@ if uploaded_files and st.button("GENERATE COMPLETE REPORT"):
         # Combine
         df = pd.concat(all_dfs, ignore_index=True)
 
-        # Parse time + derive date
-        df["SubmissionDateTime_ET"] = pd.to_datetime(df["Start time"], errors="coerce")
+        # Parse time + derive date (handle Excel serials and strings)
+        start_time = df["Start time"]
+        numeric = pd.to_numeric(start_time, errors="coerce")
+        is_excel_serial = numeric.notna() & (numeric > 30000) & (numeric < 80000)
+
+        parsed_times = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns]")
+        parsed_times.loc[is_excel_serial] = pd.to_datetime(
+            numeric.loc[is_excel_serial],
+            unit="D",
+            origin="1899-12-30",
+            errors="coerce",
+        )
+        parsed_times.loc[~is_excel_serial] = pd.to_datetime(start_time.loc[~is_excel_serial], errors="coerce")
+
+        df["SubmissionDateTime_ET"] = parsed_times
         df = df.dropna(subset=["SubmissionDateTime_ET"]).copy()
         df["ClassDate"] = df["SubmissionDateTime_ET"].dt.normalize()
 
@@ -219,6 +232,12 @@ if uploaded_files and st.button("GENERATE COMPLETE REPORT"):
 
         if df.empty:
             raise ValueError("No valid attendance records found after parsing timestamps.")
+
+        # Diagnostics (helps confirm parsing and Excel serial detection)
+        st.caption("Start time parsing diagnostics")
+        st.write("Start time raw sample:", df["Start time"].dropna().head(3).tolist())
+        st.write("Parsed sample:", df["SubmissionDateTime_ET"].dropna().head(3).tolist())
+        st.write("Excel-serial %:", float(is_excel_serial.mean()))
 
         # Deduplicate: first entry per student per day (by StudentKey)
         daily = (
