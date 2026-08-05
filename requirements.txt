@@ -1,4 +1,6 @@
-streamlit
+streamlit==1.59.2
+starlette<1.0
 pandas
 openpyxl
 numpy
+pillow
